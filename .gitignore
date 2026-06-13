@@ -1,0 +1,5 @@
+.gocache/
+sample-observability-api.exe
+sample-observability-api
+*.test
+.server.*.log

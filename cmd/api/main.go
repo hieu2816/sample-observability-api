@@ -31,7 +31,13 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	logger.Info("starting sample observability api", "addr", addr)
+	info := buildinfo.Current()
+	logger.Info("[v2] starting sample observability api",
+		"version", info.Version,
+		"commit", info.Commit,
+		"build_time", info.BuildTime,
+		"addr", addr,
+	)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("server stopped unexpectedly", "error", err)
 		os.Exit(1)

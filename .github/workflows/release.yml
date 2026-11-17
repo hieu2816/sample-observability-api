@@ -1,0 +1,70 @@
+name: Release
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# only what the job needs: a token to assume the AWS role, and read access to the code
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # the job never pushes, so it should not keep the repository token
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          # an exact patch version, because the binary hash depends on the toolchain
+          go-version: "1.26.4"
+          # a restored cache could change what is compiled into a released binary
+          cache: false
+
+      - name: Build application
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          commit=$(git rev-parse --short HEAD)
+          go build -trimpath -buildvcs=false -ldflags "-s -w -X sample-observability-api/internal/buildinfo.commit=$commit" -o sample-observability-api ./cmd/api
+          
+      - name: Hash the binary
+        id: hash
+        shell: bash
+        run: |
+          test -s sample-observability-api
+          sha256=$(sha256sum sample-observability-api | awk '{print $1}')
+          echo "binary_sha256=$sha256"
+          echo "sha256_hash=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Role assumption
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::457660517078:role/cloud-ops-ci-publish
+          aws-region: ap-southeast-1
+
+      - name: Upload artifact to S3
+        shell: bash
+        env:
+          BUCKET: cloud-ops-tf-artifact-cloud-ops-automation-platform-2026
+          SHA256: ${{ steps.hash.outputs.sha256_hash }}
+        run: |
+          aws --version
+          aws s3api put-object \
+            --bucket "$BUCKET" \
+            --key "releases/$SHA256/sample-observability-api" \
+            --body sample-observability-api \
+            --if-none-match "*" 
+          echo "releases/$SHA256/sample-observability-api" >> "$GITHUB_STEP_SUMMARY"
+        
